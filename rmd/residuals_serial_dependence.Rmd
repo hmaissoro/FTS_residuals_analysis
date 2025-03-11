@@ -1,0 +1,208 @@
+---
+title: "Analysis of serial dependence in functional time series residuals"
+author: "Hassan Maissoro"
+output: 
+  html_document:
+    toc : true
+    toc_depth : 4
+    number_sections: true
+    theme: readable
+    highlight: tango
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    css: style.css
+    fig_width: 8
+    fig_height: 3
+date: "2025-02-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(magrittr)
+library(dygraphs)
+library(manipulateWidget)
+library(TSA) # For time series tests
+library(tseries) # For KPSS test
+library(lmtest) # For Durbin-Watson test
+library(pracma) # For distance correlation
+library(adaptiveFTS)
+```
+
+## Introduction
+Our aim is to test the assumption that FTS measurement errors are independent.
+
+### Observation Scheme
+We consider a stationary FTS $ \{X_n\} $ observed over a **discrete grid** or at **random points**:
+$$
+Y_{n,i} = X_n(T_{n,i}) + \sigma(T_{n,i})\varepsilon_{n,i}, \quad n = 1, ..., N, \quad i = 1, ..., M_n.
+$$
+where:
+ 
+- $\{X_n\}$ is a strictly FTS.
+- $T_{n,i}$ are i.i.d. samples of a random variable $T$ (or fixed points in **common design**).
+- $M_n$ are i.i.d. samples of a random variable $ M$ with expectation $\lambda$.
+- $\varepsilon_{n,i}$ are i.i.d. samples of $\varepsilon$ with mean 0 and unit variance.
+- $\sigma$ is a Lipschitz continuous function accounting for heteroscedasticity.
+- $\{X_n\}, M, T, \varepsilon$ are mutually independent.
+
+### Naradaya-Watson
+ 
+Let $\widehat{X}_n(t;h)$ be the Naradaya-Watson estimator of $X_n$ at $t$ obtained using the sample $\{(T_{n,i}, Y_{n,i}),\ i = 1, ..., M_n\}$ and some bandwidth parameter $h$. The parameter $h$ can be selected by :
+ 
+1. Cross-Validation over each curve;
+2. The Adaptive optimal smoothing method proposed by *Golovkine et al. (2022)*. NB : Technical adaptation required for FTS.
+3. The adaptive bandwidth optimal bandwidth parameter for mean or (auto)covariance estimation.
+
+### Smoothing residuals
+Let the smoothing residuals be for each curve $X_n$:
+$$
+  \widehat{e}_{n,i} = Y_{n,i} - \widehat{X}_n(T_{n,i};h), \qquad i=1, ..., M_n.
+$$
+Our aim is to test the serial dependence of the residuals for the whole FTS:
+
+$$
+  \{\widehat{e}_{n,i},\; n=1, ..., N,\; i=1, ..., M_n\}.
+$$
+
+### Analysis scenarios
+
+1. **Scenario 1** : The Naive approach. We consider $\{\widehat{e}_{n,i},\; n=1, ..., N,\; i=1, ..., M_n\}$ as one sample of FTS.
+    - Diagnostic plots : ACF, PACF, etc.
+    - Tests in time series analysis : Ljung-Box test, etc.
+    - Nonparametric Tests for Serial Dependence : Kendall's tau, Wald–Wolfowitz runs test, Brock-Dechert-Scheinkman (BDS) Test, etc.
+  
+
+2. **Scenario 2** : We consider $\{\widehat{e}_{n,i},\; n=1, ..., N,\; i=1, ..., M_n\}$ as $N$ samples $\{\widehat{e}_{n,i},\; i=1, ..., M_n\}$, $n=1, ..., N$.
+    - Permutation with respect to $n$ and application of the analysis of **Scenario 1**.
+    - Analysis of the serial dependence of each sample $\{\widehat{e}_{n,i},\; i=1, ..., M_n\}$.
+    - Analysis of the serial dependence of the whole sample $\{\widehat{e}_{n,i},\; i=1, ..., M_n\}$, $n=1, ..., N$, using
+        * Multivariate independence tests Across curves : multivariate Ljung-Box test, etc.
+        * Pairwise independence tests
+        * Etc.
+      
+
+3. **Scenario 3:** We consider $\{\widehat{e}_{n,i},\; n=1, ..., N,\; i=1, ..., M_n\}$ as $N$ samples $\{\widehat{e}_{n,i},\; i=1, ..., M_n\}$, $n=1, ..., N$.
+    - For each curve, find a summary statistics of the resiudals. Let $f$ be some summary statistic of the residuals such Variance, Mean, Other Statistics, etc. and define
+      $$ \widehat{S}_n = f(\{\widehat{e}_{n,i},\; i=1, ..., M_n\}) $$
+    - Study the variations of $\{\widehat{S}_n\}$
+    
+## Application of the analysis scenarios
+ 
+- We consider the **random** and **Common** resign with sample size $N=150$ and $\lambda = 90$.
+- Homoscedasticity noise $\varepsilon \sim \mathcal{N}(0, 0.0625)$.
+- We use cross-validation to select the bandwidth parameter $h$ of the Nadaraya-Watson estimator.
+
+
+```{r eval=FALSE}
+# Generate Random design data
+dt_rd <- adaptiveFTS::simulate_far(
+  N = 150L, lambda = 90L, tdesign = "random",
+  Mdistribution = rpois, tdistribution = runif,
+  tcommon = seq(0.2, 0.8, len = 50),
+  hurst_fun = function(t) hurst_logistic(t, 0.4, 0.8, 50),
+  L = 4,
+  far_kernel = function(s,t) 9/4 * exp( - (t + 2 * s) ** 2),
+  far_mean = function(t) 4 * sin(1.5 * pi * t),
+  int_grid = 100L, burnin = 100L,
+  remove_burnin = TRUE)
+dt_rd <- dt_rd[ttag == "trandom"]
+dt_rd[, eps := rnorm(.N, 0, 0.25)]
+dt_rd[, Yobs := X + eps]
+saveRDS(dt_rd, file = "./data/dt_rd.RDS")
+
+# Generate common design data
+dt_cd <- adaptiveFTS::simulate_far(
+  N = 150L, lambda = 90L, tdesign = "common",
+  Mdistribution = NULL, tdistribution = NULL,
+  tcommon = seq(0.2, 0.8, len = 90),
+  hurst_fun = function(t) hurst_logistic(t, 0.4, 0.8, 50),
+  L = 4,
+  far_kernel = function(s,t) 9/4 * exp( - (t + 2 * s) ** 2),
+  far_mean = function(t) 4 * sin(1.5 * pi * t),
+  int_grid = 100L, burnin = 100L, remove_burnin = TRUE)
+dt_cd[, eps := rnorm(.N, 0, 0.25)]
+dt_cd[, Yobs := X + eps]
+saveRDS(dt_cd, file = "./data/dt_cd.RDS")
+```
+
+```{r eval=FALSE}
+## NW smoothing : Random design
+dt_rd_smooth <- data.table::rbindlist(lapply(1:150, function(id){
+  dt_one_curve <- dt_rd[id_curve == id]
+  Yobs <- dt_one_curve[, Yobs]
+  tobs <- dt_one_curve[, tobs]
+  
+  n <- length(tobs)
+  hcv <- estimate_nw_bw(
+    y = Yobs, t = tobs,
+    bw_grid = seq(2 / n, n ** (-1/3), len = 100),
+    kernel_name = "epanechnikov")
+  res_nw <- adaptiveFTS::estimate_nw(y = Yobs, t = tobs, tnew = tobs, h = hcv, kernel_name = "epanechnikov")
+  
+  dt_one_curve[, cv_opt_bw := res_nw[, h]]
+  dt_one_curve[, yhat := res_nw[, yhat]]
+  dt_one_curve[, error := Yobs - yhat]
+  
+  return(dt_one_curve)
+}))
+
+saveRDS(dt_rd_smooth, file = "./data/dt_rd_smooth.RDS")
+
+## NW smoothing : Random design
+dt_cd_smooth <- data.table::rbindlist(lapply(1:150, function(id){
+  dt_one_curve <- dt_cd[id_curve == id]
+  Yobs <- dt_one_curve[, Yobs]
+  tobs <- dt_one_curve[, tobs]
+  
+  n <- length(tobs)
+  hcv <- estimate_nw_bw(
+    y = Yobs, t = tobs,
+    bw_grid = seq(2 / n, n ** (-1/3), len = 100),
+    kernel_name = "epanechnikov")
+  res_nw <- adaptiveFTS::estimate_nw(y = Yobs, t = tobs, tnew = tobs, h = hcv, kernel_name = "epanechnikov")
+  
+  dt_one_curve[, cv_opt_bw := res_nw[, h]]
+  dt_one_curve[, yhat := res_nw[, yhat]]
+  dt_one_curve[, error := Yobs - yhat]
+  
+  return(dt_one_curve)
+}))
+
+saveRDS(dt_cd_smooth, file = "./data/dt_cd_smooth.RDS")
+
+
+```
+
+
+
+### Scenario 1
+
+It is the Naive approach. We consider $\{\widehat{e}_{n,i},\; n=1, ..., N,\; i=1, ..., M_n\}$ as one sample of FTS.
+
+  - Diagnostic plots : ACF, PACF, etc.
+  - Tests in time series analysis : Ljung-Box test, etc.
+  - Nonparametric Tests for Serial Dependence : Kendall's tau, Wald–Wolfowitz runs test, Brock-Dechert-Scheinkman (BDS) Test, etc.
+
+#### Random design
+```{r, fig_width = 4, fig_height = 3, fig.align='center'}
+dt_rd_smooth <- readRDS("./data/dt_rd_smooth.RDS")
+acf(dt_rd_smooth[, error])
+pacf(dt_rd_smooth[, error])
+```
+
+#### Common design
+```{r, fig_width = 4, fig_height = 3, fig.align='center'}
+dt_cd_smooth <- readRDS("./data/dt_cd_smooth.RDS")
+acf(dt_cd_smooth[, error])
+pacf(dt_cd_smooth[, error])
+```
+
+    
+    
+
+
+
