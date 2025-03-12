@@ -19,7 +19,7 @@ gen_data <- function(N_to_use = 150, lambda_to_use = 40) {
     tdistribution = runif,
     tcommon = NULL,
     hurst_fun = function(t) hurst_logistic(t, 0.4, 0.8, 50),
-    L = 4,
+    L = 1,
     far_kernel = function(s,t) get_real_data_far_kenel(s,t, operator_norm = 0.5),
     far_mean = get_real_data_mean,
     int_grid = 100L, burnin = 100L,

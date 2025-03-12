@@ -3,22 +3,23 @@ library(ggplot2)
 library(adaptiveFTS)
 library(np)
 library(locfit)
-library(smooths)
 library(lmtest)
 library(tseries)
 library(car)
 source("./R/02_sigma_function.R")
+# source("./R/06_local_poly_loocv_func.R")
 
 # ------------------------------------------------------------------------
 # /!\ Change (N, lambda) and run the script
 #
-# (N, lambda) \in \{(150, 40), (150, 90), (1000, 40), (1000, 1000)}
+# (N, lambda) \in \{(150, 40), (150, 90), (400, 300), (1000, 40), (1000, 1000)}
 #
 # ------------------------------------------------------------------------
 
 # Import the data
-N <- 150
+N <- 1000
 lambda <- 40
+
 dt_raw <- readRDS(paste0("./data/data_N=", N, "_lambda=", lambda, ".RDS"))
 
 ggplot(data = dt_raw, aes(x = tobs, y = X, group = id_curve)) +
@@ -36,8 +37,8 @@ dt_raw[, epsilon := rnorm(.N, 0, 1), by = "id_curve"]
 
 # Generate epsilon and add sigma function s
 dt_raw[, epsilon := rnorm(.N, 0, 1), by = "id_curve"]
-dt_raw[, sigma_logistic := sigma_logistic(t = tobs, sigma_min = 0.2, sigma_max = 0.8, slope = 15)]
-dt_raw[, sigma_linear := sigma_linear(t = tobs, sigma_min = 0.2, sigma_max = 0.8)]
+dt_raw[, sigma_logistic := sigma_logistic(t = tobs, sigma_min = 0.2, sigma_max = 0.5, slope = 15)]
+dt_raw[, sigma_linear := sigma_linear(t = tobs, sigma_min = 0.2, sigma_max = 0.5)]
 dt_raw[, sigma_arctan_periodic := sigma_arctan_periodic(t = tobs, A = 1)]
 dt_raw[, sigma_sin := sigma_sin(t = tobs)]
 
@@ -67,15 +68,19 @@ get_serial_dependence_test_pval <- function(dt_raw, index_curve = 1, yobs_var = 
   # Local polynomial smoothing
   bw_model <- np::npregbw(data = dt_one_curve, formula = Yobs ~ tobs, degree = 2, bwmethod = "cv.ls")
   res_npreg <- np::npreg(bws = bw_model, degree = 2, residuals = TRUE)
+  m_estim <- res_npreg$mean
+  eta_estim <- res_npreg$resid
   
   # Residuals extracting
-  dt_one_curve[, c("mhat", "eta_hat") := .(res_npreg$mean, res_npreg$resid)]
+  dt_one_curve[, c("mhat", "eta_hat") := .(m_estim, eta_estim)]
   dt_one_curve[, eta_hat_square := eta_hat ** 2]
   
   # Estimation of \sigma^2
   bw_model_eta <- np::npregbw(data = dt_one_curve, formula = eta_hat_square ~ tobs, degree = 2, bwmethod = "cv.ls")
   res_npreg_eta <- np::npreg(bws = bw_model_eta, degree = 2, residuals = TRUE)
-  dt_one_curve[, sigma_square := res_npreg_eta$mean]
+  sigma_square_estim <- res_npreg_eta$mean
+  
+  dt_one_curve[, sigma_square := sigma_square_estim]
   
   # Estimate of epsilon residuals
   dt_one_curve[, epsilon_hat := (Yobs - mhat) / sqrt(sigma_square)]
@@ -121,7 +126,7 @@ dt_res_serial_dep_test <- data.table::rbindlist(lapply(1:N, function(i){
 saveRDS(dt_res_serial_dep_test, file = paste0("./data/data_serial_dependence_test_N=", N, "_lambda=", lambda, ".RDS"))
 
 
-
+rm(list = ls()) ; gc()
 
 
 
