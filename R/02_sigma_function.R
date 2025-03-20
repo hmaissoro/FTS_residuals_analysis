@@ -1,11 +1,12 @@
 library(data.table)
 
 # Version of \sigma function
-sigma_sin <- function(t = seq(0, 1, length.out = 100)) {
+sigma_sin <- function(t = seq(0, 1, length.out = 100), sigma_min = 0.2, sigma_max = 0.8) {
   if (!methods::is(t, "numeric") || any(t < 0 | t > 1))
     stop("'t' must be a numeric vector with values between 0 and 1.")
   
-  sigma_val <- abs(sin(pi * t))
+  sigma_val <- sigma_min + (sigma_max - sigma_min ) * abs(sin(pi * t))
+  
   return(sigma_val)
 }
 

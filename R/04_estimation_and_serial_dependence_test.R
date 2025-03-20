@@ -17,8 +17,8 @@ source("./R/02_sigma_function.R")
 # ------------------------------------------------------------------------
 
 # Import the data
-N <- 1000
-lambda <- 40
+N <- 400
+lambda <- 300
 
 dt_raw <- readRDS(paste0("./data/data_N=", N, "_lambda=", lambda, ".RDS"))
 
@@ -37,10 +37,11 @@ dt_raw[, epsilon := rnorm(.N, 0, 1), by = "id_curve"]
 
 # Generate epsilon and add sigma function s
 dt_raw[, epsilon := rnorm(.N, 0, 1), by = "id_curve"]
-dt_raw[, sigma_logistic := sigma_logistic(t = tobs, sigma_min = 0.2, sigma_max = 0.5, slope = 15)]
-dt_raw[, sigma_linear := sigma_linear(t = tobs, sigma_min = 0.2, sigma_max = 0.5)]
-dt_raw[, sigma_arctan_periodic := sigma_arctan_periodic(t = tobs, A = 1)]
-dt_raw[, sigma_sin := sigma_sin(t = tobs)]
+dt_raw[, sigma_logistic := sigma_logistic(t = tobs, sigma_min = 0.25, sigma_max = 0.5, slope = 30)]
+dt_raw[, sigma_linear := sigma_linear(t = tobs, sigma_min = 0.25, sigma_max = 0.5)]
+dt_raw[, sigma_arctan_periodic := sigma_logistic(t = tobs, sigma_min = 0.5, sigma_max = 0.25, slope = 15)]
+# dt_raw[, sigma_arctan_periodic := sigma_arctan_periodic(t = tobs, A = 1)]
+dt_raw[, sigma_sin := sigma_sin(t = tobs, sigma_min = 0.25, sigma_max = 0.5)]
 
 # Evaluate sigma function
 dt_raw[, eta_logistic := sigma_logistic * epsilon]
@@ -60,7 +61,18 @@ dt_raw[, Yobs_linear := X + eta_linear]
 dt_raw[, Yobs_arctan_periodic := X + eta_arctan_periodic]
 dt_raw[, Yobs_sin := X + eta_sin]
 
-# Function for computing serial dependence tests on a single cuvrve
+ggplot(data = dt_raw, aes(x = tobs, y = Yobs_arctan_periodic, group = id_curve)) +
+  geom_line(colour = "#154360")  +
+  xlab(label = "t") +
+  ylab(label = latex2exp::TeX("$X_n(t)$  ")) +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 18),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        axis.text.x =  element_text(size = 18),
+        axis.text.y =  element_text(size = 18))
+
+# Function for computing serial dependence tests on a single cuvrve ----
 get_serial_dependence_test_pval <- function(dt_raw, index_curve = 1, yobs_var = "Yobs_logistic") {
   # Extract the index_curve-th curve data
   dt_one_curve <- dt_raw[id_curve == index_curve, .(tobs, "Yobs" = get(yobs_var))]
@@ -84,21 +96,20 @@ get_serial_dependence_test_pval <- function(dt_raw, index_curve = 1, yobs_var = 
   
   # Estimate of epsilon residuals
   dt_one_curve[, epsilon_hat := (Yobs - mhat) / sqrt(sigma_square)]
-  dt_one_curve[, epsilon_hat_lag := shift(epsilon_hat, n = 1, type = "lag")]
   
   # Durbin-Watson test
   dw_pval <- lmtest::dwtest(lm(dt_one_curve$epsilon_hat ~ 1))$p.value
   
   # Breusch-Godfrey Test
-  bg_pval <- lmtest::bgtest(lm(dt_one_curve$epsilon_hat ~ 1))$p.value
+  bg_pval <- lmtest::bgtest(lm(dt_one_curve$epsilon_hat ~ 1), type = "F", fill = 1)$p.value
   
   # Box-Pierce and Ljung-Box tests on residuals
-  box_pierce_pval <- Box.test(dt_one_curve$epsilon_hat, lag = 1, type = "Box-Pierce")$p.value
-  ljung_box_pval <- Box.test(dt_one_curve$epsilon_hat, lag = 1, type = "Ljung-Box")$p.value
+  box_pierce_pval <- Box.test(dt_one_curve$epsilon_hat, lag = 2, fitdf = 1, type = "Box-Pierce")$p.value
+  ljung_box_pval <- Box.test(dt_one_curve$epsilon_hat, lag = 2, fitdf = 1, type = "Ljung-Box")$p.value
   
   # Student test
-  res_lm <- lm(dt_one_curve$epsilon_hat ~ dt_one_curve$epsilon_hat_lag)
-  ttest_pval <- summary(res_lm)$coefficients[2, 4]
+  res_arma <- arma(na.omit(dt_one_curve$epsilon_hat), order = c(1, 0, 0))
+  ttest_pval <- summary(res_arma)$coef[1, 4]
   
   dt_res_pval <- data.table::data.table(
     "id_curve" = index_curve,

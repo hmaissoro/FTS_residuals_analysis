@@ -7,7 +7,7 @@ library(ggplot2)
 # (N, lambda) \in \{(150, 40), (150, 90), (1000, 40), (1000, 1000)}
 #
 # ------------------------------------------------------------------------
-N <- 150
+N <- 1000
 lambda <- 40
 
 # Import the estimated pvalues
@@ -65,8 +65,14 @@ get_pval_graph <- function(data = dt_pval, N_to_use = N, lambda_to_use = lambda,
       plot = gplot,
       filename = paste0("./graphs/graph_", var_pval, "_", sigma_fun, "_N=", N_to_use, "_lambda=", lambda_to_use, ".png"),
       width = 7, height = 5, units = "in", dpi = 300, bg = "white")
+    if (var_pval == "dw_pval") {
+      ggsave(
+        plot = gplot,
+        filename = paste0( "../Hassan/report/adaptive_estimation/submission_JTS_2024_09/figures/residuals_dependence/",
+                           "graph_", var_pval, "_", sigma_fun, "_N=", N_to_use, "_lambda=", lambda_to_use, ".png"),
+        width = 7, height = 5, units = "in", dpi = 300, bg = "white")
+    }
   }
-  
   return(gplot)
 }
 
